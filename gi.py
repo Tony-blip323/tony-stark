@@ -241,12 +241,16 @@ if uploaded_file is not None:
 
                     1. 🌦️ **Live Weather & Soil Metrics (ICAR Context):** Present live weather and actual soil properties. Explain what these mean according to regional ICAR guidelines for this crop.
                     2. 🌿 **Crop & Disease Identification (NPSS Aligned):** Name the crop and exact disease/pest/nutrient deficiency diagnosed, cross-checked with National Pest Surveillance System (NPSS) parameters.
-                    3. 💊 **Suggested Treatment / Pesticide (ICAR / NHB Protocols):** Recommended cost-effective organic or chemical solution approved by standard agricultural protocols.
-                    4. 🛍️ **Budget Retail Store Shopping List (mKisan / Farmer Portal Aligned):** Specific, budget-friendly items, fertilizers, or tools to buy from a local input shop to keep costs minimal.
-                    5. 🌱 **Organic & Certification Check (Jaivik Bharat / NPOP):** If applicable, state whether organic remedies meet Jaivik Bharat or NPOP criteria.
-                    6. ✅ **Pros (Fayde):** Benefits and effectiveness of this treatment (2-3 points).
-                    7. ⚠️ **Cons / Risks & Pre-Harvest Intervals:** Safety measures, environmental precautions, and health guidelines.
-                    8. ⚖️ **Legal & Regulatory Status (CIBRC):** State if the treatment is legally approved or restricted by CIBRC.
+                    3. ⚠️ **Damage Assessment & Risk Level (Khatre Ki Report):** <span style="color:red; font-weight:bold;">(NEW ADDITION)</span> Analyze the image specifically for the severity of infection. State:
+                       - Estimated percentage of damage (e.g., Shuruaati/Kam (<10%), Darmiyani (10-30%), Gambhir (>30%)).
+                       - Risk Level: Whether it is safe (Koi khatra nahi), needs monitoring (Nazar rakhein), or requires urgent action (Turant upay karein).
+                    4. 💊 **Suggested Treatment / Pesticide (ICAR / NHB Protocols):** Recommended cost-effective organic or chemical solution approved by standard agricultural protocols.
+                    5. 🛍️ **Budget Retail Store Shopping List (mKisan / Farmer Portal Aligned):** Specific, budget-friendly items, fertilizers, or tools to buy from a local input shop to keep costs minimal.
+                    6. 🌱 **Organic & Certification Check (Jaivik Bharat / NPOP):** If applicable, state whether organic remedies meet Jaivik Bharat or NPOP criteria.
+                    7. ✅ **Pros (Fayde):** Benefits and effectiveness of this treatment (2-3 points).
+                    8. ⚠️ **Cons / Risks & Pre-Harvest Intervals:** Safety measures, environmental precautions, and health guidelines.
+                    9. ⚖️ **Legal & Regulatory Status (CIBRC):** State if the treatment is legally approved or restricted by CIBRC.
+                    """
                     """
 
                     response = client.models.generate_content(
