@@ -94,12 +94,17 @@ with st.expander("📖 **How SmartAgri Assistant Works & Compliance Standards**"
 
 st.write("---")
 
-# User se sidebar mein key maangne ki jagah, ise secure secrets se uthao:
+
+# Streamlit secrets se API key secure tareeqe se uthane ke liye:
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
 except Exception:
-    st.error("⚠️ Gemini API Key is missing in Streamlit Secrets! Please configure it.")
+    st.error("⚠️ GEMINI_API_KEY is missing in Streamlit Cloud Secrets! Please add it in App Settings -> Secrets.")
     st.stop()
+
+# Ab client initialize karein
+client = genai.Client(api_key=api_key)
+
 
 # --- SIDEBAR FOR CONFIGURATION, LANGUAGE & LOCATION ---
 st.sidebar.header("Configuration & Location")
