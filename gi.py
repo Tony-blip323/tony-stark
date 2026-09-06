@@ -1,7 +1,9 @@
+import time
 import streamlit as st
 import requests
 from PIL import Image
 from google import genai
+from google.genai import types
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
@@ -17,6 +19,9 @@ st.markdown(
 )
 
 # --- HELPER FUNCTIONS FOR LIVE DATA ---
+# Cached for 30 minutes so repeat analyses of the same area don't re-hit these
+# free APIs every single time — this alone speeds up repeated runs noticeably.
+@st.cache_data(ttl=1800, show_spinner=False)
 def get_lat_lon(area, state):
     """Fetches latitude and longitude for the given area and state using Open-Meteo Geocoding API."""
     try:
@@ -31,6 +36,7 @@ def get_lat_lon(area, state):
         pass
     return None, None, None, None
 
+@st.cache_data(ttl=1800, show_spinner=False)
 def get_live_weather(lat, lon):
     """Fetches current live weather data from Open-Meteo API (Free, no API key required)."""
     try:
@@ -51,6 +57,7 @@ def get_live_weather(lat, lon):
     except Exception:
         return None
 
+@st.cache_data(ttl=1800, show_spinner=False)
 def get_soil_data(lat, lon):
     """Fetches soil properties (pH, Organic Carbon, Clay, Sand) from ISRIC SoilGrids API (Free, no key required)."""
     try:
@@ -77,6 +84,32 @@ def get_soil_data(lat, lon):
     except Exception:
         return None
 
+
+def generate_with_retry(client, model, contents, config=None, max_retries=3, base_delay=6):
+    """
+    Calls Gemini and, if it hits a transient rate-limit (429 / RESOURCE_EXHAUSTED),
+    quietly waits and retries a few times instead of immediately failing. This
+    smooths over short-term per-minute limits so the user doesn't see an error
+    for those. If the quota is genuinely exhausted for the day, it will still
+    raise after the retries are used up — no amount of retrying can get around
+    a real daily limit, only a paid plan / waiting can.
+    """
+    last_err = None
+    for attempt in range(max_retries):
+        try:
+            if config is not None:
+                return client.models.generate_content(model=model, contents=contents, config=config)
+            return client.models.generate_content(model=model, contents=contents)
+        except Exception as e:
+            err_str = str(e)
+            last_err = e
+            if "RESOURCE_EXHAUSTED" in err_str or "429" in err_str:
+                time.sleep(base_delay * (attempt + 1))  # 6s, 12s, 18s
+                continue
+            raise
+    raise last_err
+
+
 # --- WELCOME / HOW IT WORKS GUIDE ---
 with st.expander("📖 **How SmartAgri Assistant Works & Compliance Standards**", expanded=False):
     st.markdown("""
@@ -94,17 +127,12 @@ with st.expander("📖 **How SmartAgri Assistant Works & Compliance Standards**"
 
 st.write("---")
 
-
-# Streamlit secrets se API key secure tareeqe se uthane ke liye:
+# User se sidebar mein key maangne ki jagah, ise secure secrets se uthao:
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
 except Exception:
-    st.error("⚠️ GEMINI_API_KEY is missing in Streamlit Cloud Secrets! Please add it in App Settings -> Secrets.")
+    st.error("⚠️ Gemini API Key is missing in Streamlit Secrets! Please configure it.")
     st.stop()
-
-# Ab client initialize karein
-client = genai.Client(api_key=api_key)
-
 
 # --- SIDEBAR FOR CONFIGURATION, LANGUAGE & LOCATION ---
 st.sidebar.header("Configuration & Location")
@@ -122,8 +150,6 @@ languages = {
 }
 selected_lang_label = st.sidebar.selectbox("Choose Language / भाषा चुनें", list(languages.keys()))
 target_language = languages[selected_lang_label]
-
-
 
 indian_states = [
     "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", 
@@ -241,20 +267,27 @@ if uploaded_file is not None:
 
                     1. 🌦️ **Live Weather & Soil Metrics (ICAR Context):** Present live weather and actual soil properties. Explain what these mean according to regional ICAR guidelines for this crop.
                     2. 🌿 **Crop & Disease Identification (NPSS Aligned):** Name the crop and exact disease/pest/nutrient deficiency diagnosed, cross-checked with National Pest Surveillance System (NPSS) parameters.
-                    3. ⚠️ **Damage Assessment & Risk Level (Khatre Ki Report):** <span style="color:red; font-weight:bold;">(NEW ADDITION)</span> Analyze the image specifically for the severity of infection. State:
-                       - Estimated percentage of damage (e.g., Shuruaati/Kam (<10%), Darmiyani (10-30%), Gambhir (>30%)).
-                       - Risk Level: Whether it is safe (Koi khatra nahi), needs monitoring (Nazar rakhein), or requires urgent action (Turant upay karein).
-                    4. 💊 **Suggested Treatment / Pesticide (ICAR / NHB Protocols):** Recommended cost-effective organic or chemical solution approved by standard agricultural protocols.
-                    5. 🛍️ **Budget Retail Store Shopping List (mKisan / Farmer Portal Aligned):** Specific, budget-friendly items, fertilizers, or tools to buy from a local input shop to keep costs minimal.
-                    6. 🌱 **Organic & Certification Check (Jaivik Bharat / NPOP):** If applicable, state whether organic remedies meet Jaivik Bharat or NPOP criteria.
-                    7. ✅ **Pros (Fayde):** Benefits and effectiveness of this treatment (2-3 points).
-                    8. ⚠️ **Cons / Risks & Pre-Harvest Intervals:** Safety measures, environmental precautions, and health guidelines.
-                    9. ⚖️ **Legal & Regulatory Status (CIBRC):** State if the treatment is legally approved or restricted by CIBRC.
-                    """
+                    3. 💊 **Suggested Treatment / Pesticide (ICAR / NHB Protocols):** Recommended cost-effective organic or chemical solution approved by standard agricultural protocols.
+                    4. 🛍️ **Budget Retail Store Shopping List (mKisan / Farmer Portal Aligned):** Specific, budget-friendly items, fertilizers, or tools to buy from a local input shop to keep costs minimal.
+                    5. 🌱 **Organic & Certification Check (Jaivik Bharat / NPOP):** If applicable, state whether organic remedies meet Jaivik Bharat or NPOP criteria.
+                    6. ✅ **Pros (Fayde):** Benefits and effectiveness of this treatment (2-3 points).
+                    7. ⚠️ **Cons / Risks & Pre-Harvest Intervals:** Safety measures, environmental precautions, and health guidelines.
+                    8. ⚖️ **Legal & Regulatory Status (CIBRC):** State if the treatment is legally approved or restricted by CIBRC.
                     """
 
-                    response = client.models.generate_content(
-                        model="gemini-3.6-flash", contents=[image, prompt]
+                    # Speed optimization: disable "thinking" (extended reasoning) since this
+                    # is a straightforward classification+advisory task that doesn't need it,
+                    # and cap output length so generation finishes faster.
+                    gen_config = types.GenerateContentConfig(
+                        thinking_config=types.ThinkingConfig(thinking_budget=0),
+                        max_output_tokens=1600,
+                    )
+
+                    response = generate_with_retry(
+                        client,
+                        "gemini-3.6-flash",
+                        [image, prompt],
+                        config=gen_config,
                     )
 
                     st.success("Analysis Complete & Verified with National Frameworks!")
@@ -271,11 +304,13 @@ if uploaded_file is not None:
                     err_str = str(e)
                     if "RESOURCE_EXHAUSTED" in err_str or "429" in err_str:
                         st.error(
-                            "⚠️ **API quota exceeded.** You've hit your Gemini API's request limit. "
-                            "Please wait a minute and try again, or check your usage at https://aistudio.google.com."
+                            "⚠️ **Still busy after a few retries.** The Gemini API's free-tier request "
+                            "limit has genuinely been reached for now (this can happen if it's a daily "
+                            "cap, not just a brief spike). Please wait a bit and try again, or check "
+                            "usage/billing at https://aistudio.google.com."
                         )
                     elif "API_KEY_INVALID" in err_str or "API key not valid" in err_str:
-                        st.error("⚠️ Your API key looks invalid. Please check it in the sidebar.")
+                        st.error("⚠️ Your API key looks invalid. Please check it in Streamlit Secrets.")
                     else:
                         st.error(f"An error occurred: {e}")
 
